@@ -1,0 +1,5 @@
+div > p > b {
+	display: block;
+	font-size: 50px;	
+	text-align: center;
+}
