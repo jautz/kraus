@@ -1,6 +1,8 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl
+use AppConfig;
 use CGI;
 use strict;
+use warnings;
 
 $SIG{'__DIE__'} = sub {
     print 'FATAL ERROR: '.$_[0]."\n";
@@ -15,17 +17,27 @@ $SIG{'__WARN__'} = sub {
 my $SCRIPT_NAME = $0;
 $SCRIPT_NAME =~ s/^.*?(\w+\.(cgi|pl))$/$1/;
 
-my $CONFIGURATIONS = {
-    DEV => {
-        CSS => '/~odin/website/style.css',
-        SMART_CSS => 'smartphone.css'
+my $DEBUG = 0;
+
+my $CONFIG_FILE = ($ENV{HOME} || ($ENV{DOCUMENT_ROOT} ? $ENV{DOCUMENT_ROOT}.'/..' : undef) || '.').'/.kraus';
+
+my $config = AppConfig->new(
+    {
+        GLOBAL   => { ARGCOUNT => AppConfig::ARGCOUNT_ONE },
+        PEDANTIC => 1,
     },
-    PROD => {
-        CSS => 'http://www.jay-jay.net/style.css',
-        SMART_CSS => 'smartphone.css'
-    },
-};
-my $CONFIG = $CONFIGURATIONS->{PROD};
+    css         => { DEFAULT => 'http://www.jay-jay.net/style.css' },
+    smartcss    => { DEFAULT => 'smartphone.css' },
+);
+$config->_debug(1) if ($DEBUG);
+# CONFIG_FILE is optional but if it exists it must contain valid options
+if (-f $CONFIG_FILE) {
+    unless ($config->file($CONFIG_FILE)) {
+        print_raw_header();
+        print_raw_errors() if ($DEBUG);
+        die "failure reading config file";
+    }
+}
 
 my $PARAM_FORMAT = 'format';
 my $PARAM_HELP   = 'help';
@@ -82,6 +94,8 @@ sub print_raw_header {
 
 sub print_html_header {
     print "Content-type: text/html\r\n\r\n";
+    my $css = $config->css();
+    my $smartcss = $config->smartcss();
 
     print <<EOT;
 <!DOCTYPE html
@@ -90,8 +104,8 @@ sub print_html_header {
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en-US" xml:lang="en-US">
 <head>
 <title>K.R.A.U.S. - Kaffee-Runde auf unterschiedlichen Stockwerken</title>
-<link rel="stylesheet" type="text/css" href="$CONFIG->{CSS}" />
-<link rel="stylesheet" type="text/css" href="$CONFIG->{SMART_CSS}" media="only screen and (min-device-width: 320px) and (max-device-width: 480px)" />
+<link rel="stylesheet" type="text/css" href="$css" />
+<link rel="stylesheet" type="text/css" href="$smartcss" media="only screen and (min-device-width: 320px) and (max-device-width: 480px)" />
 <meta name="viewport" content="width = 400" />
 
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
