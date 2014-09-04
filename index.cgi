@@ -26,15 +26,16 @@ my $config = AppConfig->new(
         GLOBAL   => { ARGCOUNT => AppConfig::ARGCOUNT_ONE },
         PEDANTIC => 1,
     },
-    css         => { DEFAULT => 'http://www.jay-jay.net/style.css' },
+    css         => { DEFAULT => 'http://www.jautz.org/style.css' },
     smartcss    => { DEFAULT => 'smartphone.css' },
 );
 $config->_debug(1) if ($DEBUG);
 # CONFIG_FILE is optional but if it exists it must contain valid options
 if (-f $CONFIG_FILE) {
     unless ($config->file($CONFIG_FILE)) {
-        print_raw_header();
-        print_raw_errors() if ($DEBUG);
+        my $output = Output::Text->new($config);
+        $output->header();
+        $output->warnings() if ($DEBUG);
         die "failure reading config file";
     }
 }
@@ -47,6 +48,7 @@ my $SECONDS_PER_DAY = 24 * 60 * 60;
 
 # -----------------------------------------------------------------------------
 
+# --- simulation mode ---------------------------
 if (defined $ARGV[0] and $ARGV[0] eq '-s') {
     my $limit = $ARGV[1] || 30;
     foreach my $o (0..$limit) {
@@ -55,7 +57,9 @@ if (defined $ARGV[0] and $ARGV[0] eq '-s') {
     exit;
 }
 
-my $cgi = new CGI;
+# -----------------------------------------------------------------------------
+
+my $cgi = CGI->new();
 # --- read url params ---------------------------
 my $format = $cgi->param($PARAM_FORMAT) || 'html';
 my $help   = $cgi->param($PARAM_HELP);
@@ -68,15 +72,17 @@ force_help("invalid format argument") unless ($format =~ m/^(raw|html)$/);
 force_help("invalid offset argument") unless ($offset =~ m/^-?[0-9]+$/);
 
 # --- core processing ---------------------------
-eval "print_${format}_header()";
+my $output = ($format eq 'html' ? Output::Text::HTML->new($config) : Output::Text->new($config));
+
+$output->header();
 if ($help) {
-    eval "print_${format}_help()";
+    $output->help();
 }
 else {
-    eval "print_${format}_location($offset)";
+    $output->location($offset);
 }
-eval "print_${format}_errors()";
-eval "print_${format}_footer()";
+$output->warnings();
+$output->footer();
 
 exit 0;
 
@@ -85,125 +91,6 @@ exit 0;
 sub force_help {
     warn $_[0] if (@_);
     $help = 1;
-    $format = 'raw';
-}
-
-sub print_raw_header {
-    print "Content-type: text/plain\r\n\r\n";
-}
-
-sub print_html_header {
-    print "Content-type: text/html\r\n\r\n";
-    my $css = $config->css();
-    my $smartcss = $config->smartcss();
-
-    print <<EOT;
-<!DOCTYPE html
-        PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
-         "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml" lang="en-US" xml:lang="en-US">
-<head>
-<title>K.R.A.U.S. - Kaffee-Runde auf unterschiedlichen Stockwerken</title>
-<link rel="stylesheet" type="text/css" href="$css" />
-<link rel="stylesheet" type="text/css" href="$smartcss" media="only screen and (min-device-width: 320px) and (max-device-width: 480px)" />
-<meta name="viewport" content="width = 400" />
-
-<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
-</head>
-<body>
-<div class="page">
-EOT
-}
-
-# -----------------------------------------------------------------------------
-
-sub print_raw_footer {
-}
-
-sub print_html_footer {
-    print <<EOT;
-</div>
-</body>
-EOT
-}
-
-# -----------------------------------------------------------------------------
-
-sub print_raw_errors {
-    return unless (@WARNINGS);
-    print "\nWarnings:\n";
-    foreach my $line (@WARNINGS) {
-        print "$line\n";
-    }
-}
-
-sub print_html_errors {
-    return unless (@WARNINGS);
-    print "<hr/>\n<b>Warnings:</b><br/>\n";
-    foreach my $line (@WARNINGS) {
-        print "$line<br/>\n";
-    }
-}
-
-# -----------------------------------------------------------------------------
-
-sub print_raw_help {
-    print <<EOT;
-
-PARAMETERS
-
-    help=1
-        Produces this help text.
-
-    format={html|raw}
-        Defines the output format. The raw output is meant to be used for programs that need to fetch the location for further processing.
-
-    offset=N
-        Specifies the date to be queried relative to the current date. Negative values are allowed. Default is zero, i.e. the current date.
-
-EOT
-}
-
-sub print_raw_location {
-    my $subname = (caller(0))[3];
-    die "$subname: wrong number of arguments" unless (@_ == 1);
-    my ($offset) = @_;
-
-    print calc_location($offset)."\n";
-}
-
-sub print_html_location {
-    my $subname = (caller(0))[3];
-    die "$subname: wrong number of arguments" unless (@_ == 1);
-    my ($offset) = @_;
-
-    my ($year, $month, $day) = get_date($offset);
-
-    my $location = calc_location($offset);
-
-    my $prev = ($offset - 1);
-    my $next = ($offset + 1);
-
-    if (defined $format and $format eq 'raw') {
-        print "$location\n";
-    }
-    else {
-        print <<EOT;
-    <p>
-        Am $day.$month.$year treffen wir uns im <b>$location. OG</b> -- falls belegt, im n&auml;chsth&ouml;heren freien Stockwerk.
-    </p>
-    <p>
-        <a href="$SCRIPT_NAME?$PARAM_OFFSET=$prev">[&lt;&lt;&lt;&lt;&lt;]</a>
-        &nbsp;&nbsp;
-        <a href="$SCRIPT_NAME">[heute]</a>
-        &nbsp;&nbsp;
-        <a href="$SCRIPT_NAME?$PARAM_OFFSET=$next">[&gt;&gt;&gt;&gt;&gt;]</a>
-    </p>
-    <p>
-        <a href="$SCRIPT_NAME?$PARAM_HELP=1">[Hilfe zu Parametern]</a>
-    </p>
-EOT
-    }
 }
 
 # -----------------------------------------------------------------------------
@@ -239,4 +126,153 @@ sub get_date {
     my @then = localtime($now_ts + ($diff * $SECONDS_PER_DAY));
 
     return (1900 + $then[5], 1 + $then[4], $then[3]);
+}
+
+
+# -----------------------------------------------------------------------------
+package Output::Text;
+use strict;
+use warnings;
+# -----------------------------------------------------------------------------
+
+sub new {
+    my $pkg = shift;
+    my $class = ref($pkg) || $pkg;
+
+    my $config = shift;
+    die 'AppConfig instance expected but got: '.($config // 'undef') unless (ref($config) eq 'AppConfig');
+
+    my $self = {
+        config => $config,
+    };
+    return bless $self, $class;
+}
+
+sub header {
+    my $self = shift;
+    print "Content-type: text/plain\r\n\r\n";
+}
+
+sub footer {
+    my $self = shift;
+}
+
+sub warnings {
+    my $self = shift;
+    return unless (@WARNINGS);
+    print "\nWARNINGS:\n\n";
+    foreach my $line (@WARNINGS) {
+        print "$line\n";
+    }
+}
+
+sub help {
+    my $self = shift;
+    print <<EOT;
+
+PARAMETERS
+
+    help=1
+        Produces this help text.
+
+    format={html|raw}
+        Defines the output format. The raw output is meant to be used for programs that need to fetch the location for further processing.
+
+    offset=N
+        Specifies the date to be queried relative to the current date. Negative values are allowed. Default is zero, i.e. the current date.
+
+EOT
+}
+
+sub location {
+    my $self = shift;
+    my $subname = (caller(0))[3];
+    die "$subname: wrong number of arguments" unless (@_ == 1);
+    my ($offset) = @_;
+
+    print main::calc_location($offset)."\n";
+}
+
+# -----------------------------------------------------------------------------
+package Output::Text::HTML;
+use strict;
+use warnings;
+use parent -norequire, qw(Output::Text);
+# -----------------------------------------------------------------------------
+
+sub header {
+    my $self = shift;
+
+    print "Content-type: text/html\r\n\r\n";
+    my $css = $self->{config}->css();
+    my $smartcss = $self->{config}->smartcss();
+
+    print <<EOT;
+<!DOCTYPE html
+        PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+         "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-US" xml:lang="en-US">
+<head>
+<title>K.R.A.U.S. - Kaffee-Runde auf unterschiedlichen Stockwerken</title>
+<link rel="stylesheet" type="text/css" href="$css" />
+<link rel="stylesheet" type="text/css" href="$smartcss" media="only screen and (min-device-width: 320px) and (max-device-width: 480px)" />
+<meta name="viewport" content="width = 400" />
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+</head>
+<body>
+<div class="page">
+EOT
+}
+
+sub footer {
+    print <<EOT;
+</div>
+</body>
+EOT
+}
+
+sub warnings {
+    my $self = shift;
+    return unless (@WARNINGS);
+    print "<hr/>\n<b>Warnings:</b><br/>\n";
+    foreach my $line (@WARNINGS) {
+        print "$line<br/>\n";
+    }
+}
+
+sub help {
+    my $self = shift;
+    print "<pre>\n";
+    $self->SUPER::help();
+    print "</pre>\n";
+}
+
+sub location {
+    my $self = shift;
+    my $subname = (caller(0))[3];
+    die "$subname: wrong number of arguments" unless (@_ == 1);
+    my ($offset) = @_;
+
+    my ($year, $month, $day) = main::get_date($offset);
+
+    my $location = main::calc_location($offset);
+
+    my $prev = ($offset - 1);
+    my $next = ($offset + 1);
+
+    print <<EOT;
+    <p>
+        Am $day.$month.$year treffen wir uns im <b>$location. OG</b> -- falls belegt, im n&auml;chsth&ouml;heren freien Stockwerk.
+    </p>
+    <p>
+        <a href="$SCRIPT_NAME?$PARAM_OFFSET=$prev">[&lt;&lt;&lt;&lt;&lt;]</a>
+        &nbsp;&nbsp;
+        <a href="$SCRIPT_NAME">[heute]</a>
+        &nbsp;&nbsp;
+        <a href="$SCRIPT_NAME?$PARAM_OFFSET=$next">[&gt;&gt;&gt;&gt;&gt;]</a>
+    </p>
+    <p>
+        <a href="$SCRIPT_NAME?$PARAM_HELP=1">[Hilfe zu Parametern]</a>
+    </p>
+EOT
 }
