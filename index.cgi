@@ -43,7 +43,7 @@ my $config = AppConfig->new(
         GLOBAL   => { ARGCOUNT => AppConfig::ARGCOUNT_ONE },
         PEDANTIC => 1,
     },
-    css         => { DEFAULT => 'http://www.jautz.org/style.css' },
+    css         => { DEFAULT => '/style.css' },
     smartcss    => { DEFAULT => 'smartphone.css' },
 );
 $config->_debug(1) if ($DEBUG);
